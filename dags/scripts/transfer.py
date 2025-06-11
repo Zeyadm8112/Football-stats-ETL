@@ -4,8 +4,16 @@ from airflow.operators.python import get_current_context
 from airflow.exceptions import AirflowFailException
 
 
-
+#-------------------------------------
+#Transform matches 
+#-------------------------------------
 def transform_matches(**kwargs):
+    """
+this function takes the fixtures from task:extract_fixtures, make a dataframe out of the important data 
+for the matches and neglect the unintersted ones.
+handling null values and correcting columns datatypes .
+    """    
+
     context =get_current_context()
     ti=context['ti']
     log=ti.log
@@ -35,6 +43,7 @@ def transform_matches(**kwargs):
     #  Null values handling:
     try:
         df = df.dropna(subset=['match_id', 'home_team_id', 'away_team_id', 'date', 'season', 'league_id'])
+        #dropping the cancelled matches
         df.drop(df[df['match_status']=='CANC'].index,inplace=True)
         df.fillna({'country': 'Unknown', 'match_status': 'Unknown', 'venue': 'Unknown'}, inplace=True)
         df.fillna({'home_team_score': 0, 'away_team_score': 0}, inplace=True)
@@ -58,3 +67,53 @@ def transform_matches(**kwargs):
         
     
     return df.to_dict(orient='records')
+
+
+#-------------------------------------
+#Transform Team information
+#-------------------------------------
+
+
+def transform_teams(**kwargs):
+    context =get_current_context()
+    ti=context['ti']
+    log=ti.log
+    
+    teams=ti.xcom.pull(task_ids='extract_team_info')
+    if not teams:
+        log.error("Teams data not found via Xcom.")
+        raise AirflowFailException("Missing 'Teams' from XCom.")
+    
+    teams_data=[{
+    'team_id':t['team']['id'],
+    'team_name':t['team']['name'],
+    'team_code':t['team']['code'],
+    'country':t['team']['country'],
+    'city':t['venue']['city'],
+    'founded':t['team']['founded'],
+    'venue_id':t['venue']['id'],
+    'venue_name':t['venue']['name'],
+
+    }for t in teams]
+
+    df=pd.DataFrame(teams)
+        
+    try:
+        df.dropna(subset=['team_id','team_name','venue_id'],inplace=True)
+        df.fillna({'team_code':'UNK','country':'Unknown','city':'Uknown','founded':0,'venue_name':'Unkown'},inplace=True)
+        df[['team_name', 'team_code', 'country','city','venue_name']] = df[['team_name', 'team_code',  'country','city','venue_name']] .astype('string')
+        pass
+    except KeyError as e:
+        log.error(f"Missing expected column during Cleansing: {e}")
+        raise AirflowFailException("Required column missing in DataFrame during cleansing.")
+    
+    
+    
+    return df.to_dict(orient='record')
+
+        
+    
+
+
+
+
