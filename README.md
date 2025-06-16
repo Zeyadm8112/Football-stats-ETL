@@ -1,20 +1,17 @@
 # ⚽ Football ETL Pipeline with Airflow
 
 This project is a full **ETL pipeline** built in Python using Apache Airflow. It extracts football match data from the [API-FOOTBALL](https://www.api-football.com/) API, transforms it using pandas, and loads the structured data into a **PostgreSQL** database hosted on a **Debian Linux server (Alibaba Cloud ECS)**.
-
 ---
+
+![etl_preview](https://github.com/user-attachments/assets/85f7fae0-c16d-4ad9-b359-f83a61f99866)
+---
+
 ## ✅ Pipeline Status
 
 - ✅ Extract phase – *Fixtures, Teams, Squads*
 - ✅ Transform phase – *Null handling, schema cleaning, type conversion*
 - ✅ Load phase – *PostgreSQL database*
 - 🛠️ Fully orchestrated with Airflow tasks & dependencies
-
----
-
-![etl_preview](https://github.com/user-attachments/assets/85f7fae0-c16d-4ad9-b359-f83a61f99866)
-
----
 
 ## 📌 Features
 
