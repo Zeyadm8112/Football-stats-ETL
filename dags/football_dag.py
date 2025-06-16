@@ -8,7 +8,8 @@ from airflow.utils.dates import days_ago
 
 from datetime import timedelta,datetime
 from scripts.extract import fetch_fixtures,extract_teams_id,fetch_teams_players_squads,fetch_teams_info
-
+from scripts.transfer import transform_matches,transform_teams,transform_squads
+from scripts.load import load_fixtures,load_squads,load_teams
 #DAG's argumnets
 
 default_args={
@@ -33,6 +34,11 @@ with DAG(
 ) as dag:
 
 
+
+    #-----------------------------------------------------
+    #Extract tasks
+    #-----------------------------------------------------
+    
     fetch_fixtures_task = PythonOperator(
             task_id='extract_fixtures',
             python_callable=fetch_fixtures,
@@ -53,7 +59,7 @@ with DAG(
             'api_key': '3a3bd8764d180fafd01e23bafc751a09'
         }
     )
-    extract_team_squad = PythonOperator(
+    extract_team_squad_task = PythonOperator(
     task_id='extract_team_squad',
     python_callable=fetch_teams_players_squads,
     op_kwargs={
@@ -62,10 +68,62 @@ with DAG(
     }
     )
 
+    
+    #-----------------------------------------------------
+    #Transform tasks
+    #-----------------------------------------------------
+    transform_matches_task = PythonOperator(
+        task_id='transform_matches',
+        python_callable=transform_matches,
+        provide_context=True,
+    )
 
-    # both [extract_team_info_task, extract_team_squad] tasks should be parallel executed, but it isn't here cause the free api limit the amount of requests per sec.
 
-    fetch_fixtures_task >> extract_teams_task >> extract_team_info_task  >> extract_team_squad  
+    transform_teams_task = PythonOperator(
+        task_id='transform_teams',
+        python_callable=transform_teams,
+        provide_context=True,
+    )
+
+    transform_squads_task = PythonOperator(
+        task_id='transform_squads',
+        python_callable=transform_squads,
+        provide_context=True,
+    )
+
+    #-------------------------------------------------------------
+    # Load Tasks
+    #-------------------------------------------------------------
+    load_fixtures_task = PythonOperator(
+    task_id='load_fixtures',
+    python_callable=load_fixtures,
+    provide_context=True,
+    )
+
+    load_teams_task = PythonOperator(
+        task_id='load_teams',
+        python_callable=load_teams,
+        provide_context=True,
+    )
+
+    load_squads_task = PythonOperator(
+        task_id='load_squads',
+        python_callable=load_squads,
+        provide_context=True,
+    )
+    
+#-----------------------------------------------------
+#Tasks Worflow
+#-----------------------------------------------------
+    
+
+fetch_fixtures_task >> extract_teams_task
+extract_teams_task >> extract_team_info_task
+extract_team_info_task >> [extract_team_squad_task, transform_teams_task]
+transform_teams_task >> load_teams_task
+extract_team_squad_task >> transform_squads_task >> load_squads_task
+fetch_fixtures_task >> transform_matches_task >> load_fixtures_task
+# extract_team_squad_task>>transform_squads_task
     
     
     

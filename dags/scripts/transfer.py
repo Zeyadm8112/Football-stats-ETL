@@ -2,6 +2,9 @@
 import pandas as pd
 from airflow.operators.python import get_current_context
 from airflow.exceptions import AirflowFailException
+from airflow.models import TaskInstance
+
+
 
 
 #-------------------------------------
@@ -18,7 +21,7 @@ handling null values and correcting columns datatypes .
     ti=context['ti']
     log=ti.log
     
-    fixtures=ti.xcom.pull(task_ids='extract_fixtures')
+    fixtures=TaskInstance.xcom_pull(ti, task_ids='extract_fixtures')
     if not fixtures:
         log.error("Fixtures data not found via Xcom.")
         raise AirflowFailException("Missing 'Fixtures' from XCom.")
@@ -56,7 +59,7 @@ handling null values and correcting columns datatypes .
     
     try:
         
-        df['date'] =pd.to_datetime(df['date'])    
+        df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%dT%H:%M:%SZ')    
         #changing columns types into string or int
         df[['venue', 'country', 'league', 'match_status']] = df[['venue', 'country', 'league', 'match_status']].astype('string')
         df[['home_team_score', 'away_team_score']] = df[['home_team_score', 'away_team_score']].astype(int)
@@ -72,31 +75,37 @@ handling null values and correcting columns datatypes .
 #-------------------------------------
 #Transform Team information
 #-------------------------------------
-
-
 def transform_teams(**kwargs):
     context =get_current_context()
     ti=context['ti']
     log=ti.log
     
-    teams=ti.xcom.pull(task_ids='extract_team_info')
+    teams=TaskInstance.xcom_pull(ti, task_ids='extract_team_info')
     if not teams:
         log.error("Teams data not found via Xcom.")
         raise AirflowFailException("Missing 'Teams' from XCom.")
     
-    teams_data=[{
-    'team_id':t['team']['id'],
-    'team_name':t['team']['name'],
-    'team_code':t['team']['code'],
-    'country':t['team']['country'],
-    'city':t['venue']['city'],
-    'founded':t['team']['founded'],
-    'venue_id':t['venue']['id'],
-    'venue_name':t['venue']['name'],
+    teams_data = []
 
-    }for t in teams]
-
-    df=pd.DataFrame(teams)
+    for entry in teams:
+        response = entry.get('response', [])
+        if not response:
+            continue  # skip items without valid team/venue data
+        for t in response:
+            try:
+                teams_data.append({
+                    'team_id': t['team'].get('id'),
+                    'team_name': t['team'].get('name'),
+                    'team_code': t['team'].get('code'),
+                    'country': t['team'].get('country'),
+                    'city': t['venue'].get('city'),
+                    'founded': t['team'].get('founded'),
+                    'venue_id': t['venue'].get('id'),
+                    'venue_name': t['venue'].get('name'),
+                })
+            except KeyError as e:
+                log.warning(f"Missing key in team record: {e} | raw: {t}")
+        df=pd.DataFrame(teams_data)
         
     try:
         df.dropna(subset=['team_id','team_name','venue_id'],inplace=True)
@@ -113,7 +122,57 @@ def transform_teams(**kwargs):
 
         
     
+#-------------------------------------------------
+# Transform Squad
+#-------------------------------------------------
+def transform_squads(**kwargs):
+    context =get_current_context()
+    ti=context['ti']
+    log=ti.log
+    
+    
+    squads_data = TaskInstance.xcom_pull(ti, task_ids='extract_team_squad')
+    log.info(f"Squads raw data from XCom: {squads_data}")
 
+    if not squads_data:
+        log.error("Squads data is not found by Xcom")
+        
+        raise AirflowFailException("Missing 'Squads' from XCom.")
+    squads=[]
+    for s in squads_data:
+        team = s.get('team')
+        players = s.get('players', [])
 
+        if team and players:
+            team_id = team.get('id')
+            team_name = team.get('name')
+            for player in players:
+                squads.append({
+                    'team_id': team_id,
+                    'player_id': player.get('id'),
+                    'team_name':team_name,
+                    'name': player.get('name'),
+                    'age': player.get('age'),
+                    'number': player.get('number'),
+                    'position': player.get('position')
+                })
 
-
+    # 🟢 Only fail after full loop if squads is still empty
+    if not squads:
+        log.error("Squad list has no items.")
+        raise AirflowFailException("Squads list is empty.")
+            
+        df=pd.DataFrame(squads)
+        try:
+            #Fill missing string fields
+            df.fillna({'name': 'Unknown','team_name':'Unknown', 'position': 'Undefined'}, inplace=True)
+            # Convert to string type
+            df[['name', 'team_name','position']] = df[['name','team_name', 'position']].astype('string')
+            # Fill missing numeric fields
+            df.fillna({'age': 0, 'number': 0}, inplace=True)
+            # Convert to integer type
+            df[['age', 'number']] = df[['age', 'number']].astype(int)
+        except KeyError as e:
+            log.error(f"error while trying to cleanse the columns :{e}")
+            raise AirflowFailException("Required column missing in DataFrame during cleansing.")
+                

@@ -45,8 +45,9 @@ def fetch_fixtures(**kwargs):
         data = response.json()
         fixtures = data.get("response", [])
         log.info(f"Fetched {len(fixtures)} fixtures for date {date}")
-
-        return fixtures
+        limited_fixtures= fixtures[:1]
+        log.info(f"Fixtures limited to: {len(limited_fixtures)}")
+        return limited_fixtures
     except (ValueError, KeyError) as e:
         log.error(f"Error parsing fixtures JSON: {e}")
         raise AirflowFailException("Invalid JSON format in fixtures response.")
@@ -168,7 +169,7 @@ def fetch_players_squad(team_id, api_key, base_url, log):
         'x-rapidapi-host': 'v3.football.api-sports.io',
         'x-rapidapi-key': api_key
     }
-    querystring = {"id": team_id}
+    querystring = {"team": team_id}
 
     try:
         response = requests.get(url, headers=headers, params=querystring)
